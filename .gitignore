@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 data/all_english.csv
 data/uk_tweets.csv
+.DS_Store
