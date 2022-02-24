@@ -127,3 +127,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+data/all_english.csv
+data/uk_tweets.csv
