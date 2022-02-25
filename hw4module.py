@@ -72,7 +72,7 @@ start_time = datetime.now()
 add_stopwords = ['usermention','emoji','url'] # can add hashtag here
 stop_words = text.ENGLISH_STOP_WORDS.union(add_stopwords)
 
-# Vectorise word counts - only construct tri-grams
+# Vectorise word counts - only construct quad-grams
 vec = CountVectorizer(ngram_range = (4,4), stop_words=stop_words, min_df=15, max_df=0.6)
 #Fit vectoriser and convert to dense matrix
 uk_vector = vec.fit_transform(uk_data.demojized_text).todense()
@@ -207,7 +207,7 @@ def run_cluster_Robust_OLS(df, target, treatment, controls, group_var):
     # Exclude tweets without reactions
     df_counts = df[df[target]>0]
 
-    # Exclude attypical points by the method of 
+    # Exclude atypical points by the method of 
     lk_q1 = df_counts['public_metrics.like_count'].quantile(0.25)
     lk_q3 = df_counts['public_metrics.like_count'].quantile(0.75)
 
@@ -280,4 +280,75 @@ def metrics_plot(df, spin_tweet):
 
 #metrics_plot(uk_data_spin, 'dictionary_spin')
     
+# %%
+# using quadgrams as dictionary terms
 
+#create a new column of tweets without stop words
+stop_words = list(stop_words)
+uk_data['demojized_text_lower_no_stopwords'] = uk_data['demojized_text'].str.lower()
+uk_data['demojized_text_lower_no_stopwords'] = uk_data['demojized_text_lower_no_stopwords'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
+uk_data['demojized_text_lower_no_stopwords']
+
+# Our dictionary would be composed of the top 100 quadgrams we got in the previous step
+dictionary_1 = top100_terms
+#print('Number of terms in the dictionary: {}'.format(len(dictionary_1)))
+#print(dictionary_1[0:10])
+
+# Variable with indicator whether the tweet contains at one set of quad-gram in the dictionary
+tweet_matches_1 = [any(item in i for item in dictionary_1) for i in uk_data['demojized_text_lower_no_stopwords']]
+uk_data['tweet_matches_1'] = tweet_matches_1 
+uk_data_spin = uk_data_spin.merge(uk_data[['id', 'tweet_matches_1']], on = ['id'], how = 'left')
+uk_data_spin['dictionary_spin_quad'] = uk_data_spin['tweet_matches_1']
+uk_data_spin['dictionary_spin_quad'] = uk_data_spin['dictionary_spin_quad'].astype(int)
+
+#print(uk_data_spin['dictionary_spin_quad'].value_counts())
+
+# %%
+# Dictionary from the Top 4-grams, excluding terms that are also used by Conservative
+dictionary_labour = open("labour_dictionary.txt").read().split()
+#print('Number of words in the dictionary: {}'.format(len(dictionary_labour)))
+
+# Variable with indicator whether the tweet contains at least one world of the dictionary
+uk_data['dictionary_labour_spin'] = [any(item in i for item in dictionary_labour) for i in demojized_text_split]
+uk_data_spin = uk_data_spin.merge(uk_data[['id', 'dictionary_labour_spin']], on = ['id'], how = 'left')
+uk_data_spin['dictionary_labour_spin'] = uk_data_spin['dictionary_labour_spin'].astype(int)
+
+#print(uk_data_spin['dictionary_labour_spin'].value_counts())
+
+# %% 
+# Full regression results for one model
+def run_cluster_Robust_OLS_full(df, target, treatment, controls, group_var):
+    """
+    This function takes a df and the target variable for running a preprocessing
+    step and a cluster robust ols with a given set of regressors, shows the full results
+    """
+    
+    # Preprocessing
+    # Exclude tweets without reactions
+    df_counts = df[df[target]>0]
+
+    # Exclude atypical points by the method of 
+    lk_q1 = df_counts['public_metrics.like_count'].quantile(0.25)
+    lk_q3 = df_counts['public_metrics.like_count'].quantile(0.75)
+
+    # lower bound
+    lk_lw = lk_q1 - 1.5*(lk_q3 - lk_q1)
+    lk_up = lk_q3 + 1.5*(lk_q3 - lk_q1)
+
+    df_counts = df_counts[(df_counts[target]>lk_lw) & (df_counts[target]<lk_up)]
+
+    # Regression
+    
+    X = df_counts[treatment + controls]
+    X = pd.get_dummies(X,  drop_first=True)
+    X = sm.add_constant(X)
+
+    y = np.log(df_counts[target])
+
+    group_var_ = df_counts[group_var]
+    
+    model = sm.OLS(y, X)
+    results = model.fit(cov_type='cluster', cov_kwds={'groups': group_var_})
+    
+    print(results.summary())
+                                                               
